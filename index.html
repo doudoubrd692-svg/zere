@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>زيري — Ziri</title>
+<style>
+:root{--bg:#0b1220;--card:#131c2e;--line:#22304a;--txt:#e6edf7;--mut:#8ea0bd;--ac:#14b8a6;--ac2:#f59e0b;--bad:#ef4444}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px system-ui,Tahoma,sans-serif}
+button,input,select{font:inherit;border-radius:8px;border:1px solid var(--line);background:#0f1829;color:var(--txt);padding:8px 10px}
+button{cursor:pointer}.pri{background:var(--ac);border-color:var(--ac);color:#04201c;font-weight:700}.ship{background:var(--ac2);border-color:var(--ac2);color:#2a1800;font-weight:700}
+header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+.logo{font-size:20px;font-weight:800;color:var(--ac)}.sp{flex:1}.tabs button.on{border-color:var(--ac);color:var(--ac)}
+main{padding:20px;max-width:1200px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}.stat b{display:block;font-size:24px;margin-top:4px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.bar input{flex:1;min-width:180px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{padding:10px;text-align:right;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600}
+.box{max-width:340px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px;display:grid;gap:10px}
+.s-new{color:var(--ac2)}.s-confirmed,.s-delivered{color:var(--ac)}.s-cancelled,.s-returned,.s-duplicate{color:var(--bad)}.tw{overflow-x:auto}
+#toast{position:fixed;bottom:16px;left:16px;background:var(--card);border:1px solid var(--ac);padding:10px 14px;border-radius:10px;display:none}
+</style></head><body>
+<div id="app"></div><div id="toast"></div>
+<script>
+const L={new:'جديد',confirmed:'مؤكَّد',no_answer:'لا يرد',postponed:'مؤجَّل',callback:'إعادة اتصال',cancelled:'ملغى',duplicate:'مكرَّر',shipped:'قيد التوصيل',delivered:'تم التسليم',returned:'مرتجع'};
+let S=JSON.parse(localStorage.ziri||'null'),tab='orders',F={status:'',q:''};
+const $=(h)=>{document.getElementById('app').innerHTML=h};
+const e=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2500)};
+async function api(p,m='GET',b){const r=await fetch('/api/'+p,{method:m,headers:{'Content-Type':'application/json',Authorization:'Bearer '+(S?.token||'')},body:b&&JSON.stringify(b)});
+ if(r.status===401&&p!=='login'){localStorage.removeItem('ziri');S=null;return login()}const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.status);return j}
+function login(){$(`<form class="box" onsubmit="return go(event)"><div class="logo" style="text-align:center;font-size:30px">زيري</div>
+<a href="/auth/google" style="text-decoration:none"><button type="button" class="pri" style="width:100%;padding:12px">المتابعة مع Google</button></a>
+<small style="color:var(--mut);text-align:center">يدخل فقط البريد المُضاف من المدير</small></form>`)}
+async function go(ev){ev.preventDefault();try{S=await api('login','POST',{email:em.value,password:pw.value});localStorage.ziri=JSON.stringify(S);render()}catch(x){toast(x.message)}return false}
+function out(){localStorage.removeItem('ziri');S=null;login()}
+async function render(){
+ if(!S)return login();const own=S.user.role==='owner';
+ $(`<header><span class="logo">زيري</span><div class="tabs"><button class="${tab=='orders'?'on':''}" onclick="tab='orders';render()">الطلبات</button>
+ ${own?`<button class="${tab=='team'?'on':''}" onclick="tab='team';render()">الفريق</button>`:''}</div><span class="sp"></span>
+ <span>${e(S.user.name)} (${own?'مدير':'مؤكِّد/ة'})</span><button onclick="out()">خروج</button></header><main id="m">…</main>`);
+ tab==='team'&&own?team():orders();
+}
+async function orders(){
+ const [st,list]=await Promise.all([api('stats'),api(`orders?status=${F.status}&q=${encodeURIComponent(F.q)}`)]);
+ const g=k=>st.find(x=>x.status===k)?.n||0,tot=st.reduce((a,x)=>a+x.n,0),done=g('delivered');
+ m.innerHTML=`<div class="grid"><div class="stat">الإجمالي<b>${tot}</b></div><div class="stat">جديد<b class="s-new">${g('new')}</b></div>
+ <div class="stat">مؤكَّد<b class="s-confirmed">${g('confirmed')}</b></div><div class="stat">قيد التوصيل<b>${g('shipped')}</b></div>
+ <div class="stat">نسبة التسليم<b>${tot?Math.round(done/tot*100):0}%</b></div></div>
+ <div class="bar"><input id="q" placeholder="بحث: رقم، اسم، هاتف" value="${e(F.q)}" onchange="F.q=this.value;orders()">
+ <select onchange="F.status=this.value;orders()"><option value="">كل الحالات</option>${Object.entries(L).map(([k,v])=>`<option value="${k}" ${F.status==k?'selected':''}>${v}</option>`).join('')}</select>
+ <button onclick="orders()">تحديث ↻</button></div>
+ <div class="tw"><table><tr><th>الطلب</th><th>الزبون</th><th>المنتجات</th><th>المبلغ</th><th>المؤكِّد</th><th>الحالة</th><th>إجراء</th></tr>
+ ${list.map(o=>`<tr><td><b>${e(o.number)}</b><br><small>${e(o.created_at)}</small></td>
+ <td>${e(o.customer)}<br><a style="color:var(--ac)" href="tel:${e(o.phone)}">${e(o.phone)}</a><br><small>${e(o.wilaya)} — ${e(o.address)}</small></td>
+ <td>${e(o.items)}</td><td>${o.total} دج</td><td>${e(o.agent||'—')}</td>
+ <td><select onchange="setS(${o.id},this.value)">${Object.entries(L).map(([k,v])=>`<option value="${k}" ${o.status==k?'selected':''}>${v}</option>`).join('')}</select>
+ <br><input placeholder="ملاحظة" value="${e(o.note)}" onchange="note(${o.id},this.value)" style="margin-top:6px;width:130px"></td>
+ <td>${o.status!=='confirmed'&&!o.tracking?`<button class="pri" onclick="conf(${o.id})">تأكيد ✓</button>`:''}
+ ${o.status==='confirmed'?`<button class="ship" onclick="shipIt(${o.id})">إرسال للتوصيل 🚚</button>`:''}
+ ${o.tracking?`<small>تتبع: ${e(o.tracking)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--mut)">لا توجد طلبات بعد</td></tr>'}</table></div>`;
+}
+const act=async(f,msg)=>{try{await f();toast(msg);orders()}catch(x){toast(x.message)}};
+const conf=id=>act(()=>api(`orders/${id}/confirm`,'POST'),'تم التأكيد');
+const shipIt=id=>act(()=>api(`orders/${id}/ship`,'POST'),'أُرسل إلى شركة التوصيل');
+const setS=(id,status)=>act(()=>api('orders/'+id,'PATCH',{status}),'تم الحفظ');
+const note=(id,note)=>api('orders/'+id,'PATCH',{note}).then(()=>toast('تم الحفظ'));
+async function team(){
+ const t=await api('team');
+ m.innerHTML=`<form class="bar" onsubmit="return addM(event)"><input id="n" placeholder="الاسم" required><input id="e2" type="email" placeholder="البريد" required>
+ <button class="pri">+ دعوة مؤكِّد/ة</button></form>
+ <div class="tw"><table><tr><th>الاسم</th><th>البريد</th><th>الدور</th><th>الطلبات الموزَّعة</th><th>المؤكَّدة</th><th></th></tr>
+ ${t.map(u=>`<tr><td>${e(u.name)}</td><td>${e(u.email)}</td><td>${u.role=='owner'?'مدير':'مؤكِّد/ة'}</td><td>${u.assigned}</td><td>${u.confirmed}</td>
+ <td>${u.role=='owner'?'':`<button onclick="tg(${u.id},${u.active?0:1})">${u.active?'إيقاف':'تفعيل'}</button>`}</td></tr>`).join('')}</table></div>`;
+}
+async function addM(ev){ev.preventDefault();try{const r=await api('team','POST',{name:n.value,email:e2.value});toast(r.mailed?'أُرسلت الدعوة بالبريد':'تمت الإضافة');if(!r.mailed)prompt('أرسل هذا الرابط للموظف (يدخل بـ Google بنفس البريد):',r.link);team()}catch(x){toast(x.message)}return false}
+const tg=(id,active)=>api('team/'+id,'PATCH',{active}).then(team);
+setInterval(()=>S&&tab==='orders'&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='SELECT'&&orders(),20000);
+(async()=>{const m=location.hash.match(/t=(\w+)/);
+ if(m){S={token:m[1]};history.replaceState(null,'','/');try{S.user=await api('me');localStorage.ziri=JSON.stringify(S)}catch{S=null}}
+ else if(/err=/.test(location.hash)){history.replaceState(null,'','/');setTimeout(()=>toast(/not_invited/.test(m?.input||'')?'':'هذا البريد غير مُضاف أو فشل الدخول'),300)}
+ render()})();
+</script></body></html>
