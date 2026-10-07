@@ -43,3 +43,20 @@ app.get('/api/users',(req,res)=>res.json(db.users));
 app.post('/api/webhooks/shopify',(req,res)=>{const raw=req.body;const h=req.headers['x-shopify-hmac-sha256'];if(!verifyShopify(raw,h))return res.status(401).send('Invalid webhook');let p;try{p=JSON.parse(raw.toString('utf8'));}catch{return res.status(400).send('Bad JSON');}if(db.orders.some(o=>String(o.shopifyOrderId)===String(p.id)))return res.json({ok:true,duplicate:true});const s=p.shipping_address||p.billing_address||{};const cust=p.customer||{};const name=`${cust.first_name||''} ${cust.last_name||''}`.trim()||p.email||'عميل';const o={id:crypto.randomUUID(),shopifyOrderId:String(p.id),orderNumber:p.name||`SHOP-${p.id}`,customerName:name,phone:p.phone||s.phone||cust.phone||'',wilaya:s.province||s.province_code||'',wilayaCode:s.province_code||'',commune:s.city||'',address:[s.address1,s.address2].filter(Boolean).join('، '),notes:p.note||'',total:Number(p.total_price||0),status:'PENDING_CONFIRMATION',items:(p.line_items||[]).map(i=>({title:i.title||i.name||'Produit',quantity:Number(i.quantity||1),price:Number(i.price||0)})),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};db.orders.push(o);event(o.id,'وصل الطلب من Shopify','SHOPIFY');save(db);res.json({ok:true,orderId:o.id});});
 app.get('/api/export.csv',(req,res)=>{const rows=[['order','customer','phone','wilaya','total','status','courier','tracking']];db.orders.forEach(o=>rows.push([o.orderNumber,o.customerName,o.phone,o.wilaya,o.total,labels[o.status],courier(o.courierId)?.name||'',o.trackingNumber||'']));res.setHeader('Content-Type','text/csv; charset=utf-8');res.setHeader('Content-Disposition','attachment; filename="orders.csv"');res.send('\uFEFF'+rows.map(r=>r.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(',')).join('\n'));});
 app.listen(PORT,()=>console.log(`DZ OrderHub running on http://localhost:${PORT}`));
+const express = require("express");
+const path = require("path");
+
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+// عرض ملفات الموقع
+app.use(express.static(path.join(__dirname)));
+
+// الصفحة الرئيسية
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`DZ OrderHub running on port ${PORT}`);
+});
